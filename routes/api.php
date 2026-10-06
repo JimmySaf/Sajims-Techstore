@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\ProductController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
 
@@ -11,3 +13,7 @@ Route::get('/health', function (): JsonResponse {
         'version' => '1.0.0',
     ]);
 });
+
+Route::apiResource('categories', CategoryController::class);
+
+Route::apiResource('products', ProductController::class);
