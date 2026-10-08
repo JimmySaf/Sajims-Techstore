@@ -11,6 +11,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['name', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token'])]
@@ -39,5 +40,9 @@ class User extends Authenticatable
     public function cart(): HasOne
 {
     return $this->hasOne(Cart::class);
+}
+public function orders(): HasMany
+{
+    return $this->hasMany(Order::class);
 }
 }
