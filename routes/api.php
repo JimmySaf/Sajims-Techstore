@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\ProductController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\AdminOrderController;
+use App\Http\Controllers\Api\OrderController;
 
 Route::get('/health', function (): JsonResponse {
     return response()->json([
@@ -86,4 +88,23 @@ Route::middleware(['auth:sanctum', 'admin'])
         Route::put('/products/{product}', [ProductController::class, 'update']);
         Route::patch('/products/{product}', [ProductController::class, 'update']);
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
+          
+        /*
+|--------------------------------------------------------------------------
+| Order Management
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/orders', [AdminOrderController::class, 'index']);
+Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
+
+Route::patch(
+    '/orders/{order}/status',
+    [AdminOrderController::class, 'updateStatus']
+);
+
+Route::patch(
+    '/orders/{order}/payment-status',
+    [AdminOrderController::class, 'updatePaymentStatus']
+);
     });
