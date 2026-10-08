@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\AdminOrderController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\AdminCustomerController;
 
 Route::get('/health', function (): JsonResponse {
     return response()->json([
@@ -25,8 +26,10 @@ Route::get('/health', function (): JsonResponse {
 |--------------------------------------------------------------------------
 */
 
-Route::post('/auth/register', [AuthController::class, 'register']);
-Route::post('/auth/login', [AuthController::class, 'login']);
+Route::middleware('throttle:10,1')->group(function () {
+    Route::post('/auth/register', [AuthController::class, 'register']);
+    Route::post('/auth/login', [AuthController::class, 'login']);
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -106,5 +109,39 @@ Route::patch(
 Route::patch(
     '/orders/{order}/payment-status',
     [AdminOrderController::class, 'updatePaymentStatus']
+);
+/*
+|--------------------------------------------------------------------------
+| Customer Management
+|--------------------------------------------------------------------------
+*/
+
+Route::get(
+    '/customers',
+    [AdminCustomerController::class, 'index']
+);
+
+Route::get(
+    '/customers/{user}',
+    [AdminCustomerController::class, 'show']
+);
+
+Route::put(
+    '/customers/{user}',
+    [AdminCustomerController::class, 'update']
+);
+
+Route::patch(
+    '/customers/{user}',
+    [AdminCustomerController::class, 'update']
+);
+
+Route::delete(
+    '/customers/{user}',
+    [AdminCustomerController::class, 'destroy']
+);
+Route::get(
+    '/inventory/low-stock',
+    [InventoryController::class, 'lowStock']
 );
     });
