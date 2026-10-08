@@ -59,8 +59,11 @@ class AuthController extends Controller
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
+$user->tokens()->delete();
 
-        $token = $user->createToken('techstore-api-token')->plainTextToken;
+$token = $user->createToken(
+    'techstore-api-token'
+)->plainTextToken;
 
         return response()->json([
             'success' => true,
