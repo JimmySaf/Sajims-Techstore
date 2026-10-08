@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\ProductController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\CartController;
 
 Route::get('/health', function (): JsonResponse {
     return response()->json([
@@ -48,6 +49,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::get('/cart', [CartController::class, 'index']);
+Route::post('/cart/items', [CartController::class, 'store']);
+Route::patch('/cart/items/{cartItem}', [CartController::class, 'update']);
+Route::delete('/cart/items/{cartItem}', [CartController::class, 'destroy']);
+Route::delete('/cart', [CartController::class, 'clear']);
 });
 
 /*
