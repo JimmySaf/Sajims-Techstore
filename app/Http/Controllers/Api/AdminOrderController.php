@@ -6,31 +6,56 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AdminOrderController extends Controller
 {
     /**
-     * Get all orders.
+     * Display all orders for the admin.
      */
     public function index(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'status' => [
+                'nullable',
+                Rule::in([
+                    'PENDING',
+                    'CONFIRMED',
+                    'PROCESSING',
+                    'SHIPPED',
+                    'DELIVERED',
+                    'CANCELLED',
+                ]),
+            ],
+            'payment_status' => [
+                'nullable',
+                Rule::in([
+                    'PENDING',
+                    'PAID',
+                    'FAILED',
+                    'REFUNDED',
+                ]),
+            ],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
         $orders = Order::with([
             'user:id,name,email',
-            'items',
+            'items.product',
         ])
             ->when(
-                $request->filled('status'),
-                fn ($query) => $query->where('status', $request->status)
+                $validated['status'] ?? null,
+                fn ($query, $status) => $query->where('status', $status)
             )
             ->when(
-                $request->filled('payment_status'),
-                fn ($query) => $query->where(
+                $validated['payment_status'] ?? null,
+                fn ($query, $paymentStatus) => $query->where(
                     'payment_status',
-                    $request->payment_status
+                    $paymentStatus
                 )
             )
             ->latest()
-            ->paginate(20);
+            ->paginate($validated['per_page'] ?? 15);
 
         return response()->json([
             'success' => true,
@@ -40,7 +65,7 @@ class AdminOrderController extends Controller
     }
 
     /**
-     * View an order.
+     * Display a specific order.
      */
     public function show(Order $order): JsonResponse
     {
@@ -52,21 +77,28 @@ class AdminOrderController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Order retrieved successfully.',
-            'data' => [
-                'order' => $order,
-            ],
+            'data' => $order,
         ]);
     }
 
     /**
-     * Update order status.
+     * Update the order's fulfilment status.
+     *
+     * Payment status is managed separately by AdminPaymentController.
      */
     public function updateStatus(Request $request, Order $order): JsonResponse
     {
         $validated = $request->validate([
             'status' => [
                 'required',
-                'in:PENDING,CONFIRMED,PROCESSING,SHIPPED,DELIVERED,CANCELLED',
+                Rule::in([
+                    'PENDING',
+                    'CONFIRMED',
+                    'PROCESSING',
+                    'SHIPPED',
+                    'DELIVERED',
+                    'CANCELLED',
+                ]),
             ],
         ]);
 
@@ -74,39 +106,15 @@ class AdminOrderController extends Controller
             'status' => $validated['status'],
         ]);
 
+        $order->load([
+            'user:id,name,email',
+            'items.product',
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => 'Order status updated successfully.',
-            'data' => [
-                'order' => $order->fresh(['user', 'items']),
-            ],
-        ]);
-    }
-
-    /**
-     * Update payment status.
-     */
-    public function updatePaymentStatus(
-        Request $request,
-        Order $order
-    ): JsonResponse {
-        $validated = $request->validate([
-            'payment_status' => [
-                'required',
-                'in:PENDING,PAID,FAILED,REFUNDED',
-            ],
-        ]);
-
-        $order->update([
-            'payment_status' => $validated['payment_status'],
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Payment status updated successfully.',
-            'data' => [
-                'order' => $order->fresh(['user', 'items']),
-            ],
+            'data' => $order,
         ]);
     }
 }
