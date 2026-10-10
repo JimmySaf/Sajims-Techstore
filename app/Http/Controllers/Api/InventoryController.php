@@ -12,14 +12,14 @@ use Illuminate\Support\Facades\DB;
 class InventoryController extends Controller
 {
     /**
-     * Display inventory.
+     * Display inventory with optional search and low-stock filtering.
      */
     public function index(Request $request): JsonResponse
     {
         $query = Product::with('category');
 
         if ($request->filled('search')) {
-            $search = $request->search;
+            $search = $request->input('search');
 
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -44,12 +44,12 @@ class InventoryController extends Controller
     }
 
     /**
-     * Adjust product inventory.
+     * Adjust the stock of a product and record the adjustment.
      */
     public function adjust(Request $request, Product $product): JsonResponse
     {
         $validated = $request->validate([
-            'quantity_change' => ['required', 'integer'],
+            'quantity_change' => ['required', 'integer', 'not_in:0'],
             'type' => [
                 'required',
                 'in:RESTOCK,SALE,RETURN,ADJUSTMENT,DAMAGE',
@@ -57,37 +57,36 @@ class InventoryController extends Controller
             'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
-        if (
-            $validated['quantity_change'] < 0 &&
-            $product->stock < abs($validated['quantity_change'])
+        $quantityChange = (int) $validated['quantity_change'];
+
+        $result = DB::transaction(function () use (
+            $product,
+            $validated,
+            $quantityChange,
+            $request
         ) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Insufficient stock for this adjustment.',
-            ], 422);
-        }
+            $lockedProduct = Product::whereKey($product->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $result = DB::transaction(function () use ($product, $validated, $request) {
-            $previousStock = $product->stock;
-
-            $newStock = $previousStock + $validated['quantity_change'];
+            $previousStock = (int) $lockedProduct->stock;
+            $newStock = $previousStock + $quantityChange;
 
             if ($newStock < 0) {
-                throw new \RuntimeException('Stock cannot be negative.');
+                return null;
             }
 
-            $product->stock = $newStock;
-
-            $product->status = $newStock > 0
+            $lockedProduct->stock = $newStock;
+            $lockedProduct->status = $newStock > 0
                 ? 'ACTIVE'
                 : 'OUT_OF_STOCK';
 
-            $product->save();
+            $lockedProduct->save();
 
             $adjustment = InventoryAdjustment::create([
-                'product_id' => $product->id,
+                'product_id' => $lockedProduct->id,
                 'user_id' => $request->user()->id,
-                'quantity_change' => $validated['quantity_change'],
+                'quantity_change' => $quantityChange,
                 'previous_stock' => $previousStock,
                 'new_stock' => $newStock,
                 'type' => $validated['type'],
@@ -95,10 +94,17 @@ class InventoryController extends Controller
             ]);
 
             return [
-                'product' => $product->fresh('category'),
+                'product' => $lockedProduct->fresh('category'),
                 'adjustment' => $adjustment->load('user'),
             ];
         });
+
+        if ($result === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Insufficient stock. Stock cannot be negative.',
+            ], 422);
+        }
 
         return response()->json([
             'success' => true,
@@ -108,7 +114,7 @@ class InventoryController extends Controller
     }
 
     /**
-     * Display inventory history for a product.
+     * Display the inventory adjustment history for a product.
      */
     public function history(Product $product): JsonResponse
     {
@@ -126,7 +132,7 @@ class InventoryController extends Controller
     }
 
     /**
-     * Display products with low stock.
+     * Display products with low stock (between 1 and 5 units).
      */
     public function lowStock(): JsonResponse
     {
@@ -137,24 +143,11 @@ class InventoryController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Low stock products retrieved successfully.',
-            'data' => $products,
+            'message' => 'Low-stock products retrieved successfully.',
+            'data' => [
+                'count' => $products->count(),
+                'products' => $products,
+            ],
         ]);
     }
-     public function lowStock(): JsonResponse
-{
-    $products = Product::where('stock', '>', 0)
-        ->where('stock', '<=', 5)
-        ->orderBy('stock')
-        ->get();
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Low-stock products retrieved successfully.',
-        'data' => [
-            'count' => $products->count(),
-            'products' => $products,
-        ],
-    ]);
-}
 }
