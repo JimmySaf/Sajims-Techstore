@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+
 class Product extends Model
 {
     use HasFactory;
@@ -36,5 +37,9 @@ class Product extends Model
     public function cartItems(): HasMany
 {
     return $this->hasMany(CartItem::class);
+}
+public function inventoryAdjustments(): HasMany
+{
+    return $this->hasMany(InventoryAdjustment::class);
 }
 }
