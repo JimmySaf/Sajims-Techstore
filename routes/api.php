@@ -1,5 +1,5 @@
 <?php
-
+use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
@@ -145,3 +145,4 @@ Route::get(
     [InventoryController::class, 'lowStock']
 );
     });
+    
