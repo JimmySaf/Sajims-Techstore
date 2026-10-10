@@ -72,6 +72,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Customer orders and checkout
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/checkout', [OrderController::class, 'checkout']);
+    Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
     // Payments
@@ -116,6 +117,9 @@ Route::middleware(['auth:sanctum', 'admin'])
         Route::patch('/customers/{user}', [AdminCustomerController::class, 'update']);
         Route::delete('/customers/{user}', [AdminCustomerController::class, 'destroy']);
 
-        // Inventory
+        // Inventory management
+        Route::get('/inventory', [InventoryController::class, 'index']);
         Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock']);
+        Route::post('/inventory/adjust', [InventoryController::class, 'adjust']);
+        Route::get('/inventory/{product}/history', [InventoryController::class, 'history']);
     });
