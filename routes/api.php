@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AdminCustomerController;
 use App\Http\Controllers\Api\AdminOrderController;
+use App\Http\Controllers\Api\AdminPaymentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
@@ -75,7 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
-    // Payments
+    // Customer payments
     Route::post('/orders/{order}/payment', [PaymentController::class, 'store']);
     Route::get('/payments/{payment}', [PaymentController::class, 'show']);
 });
@@ -84,6 +85,9 @@ Route::middleware('auth:sanctum')->group(function () {
 |--------------------------------------------------------------------------
 | Administrator Routes
 |--------------------------------------------------------------------------
+|
+| Every route in this group requires authentication and admin authorization.
+|
 */
 
 Route::middleware(['auth:sanctum', 'admin'])
@@ -107,8 +111,11 @@ Route::middleware(['auth:sanctum', 'admin'])
         // Order management
         Route::get('/orders', [AdminOrderController::class, 'index']);
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
-        Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
-        Route::patch('/orders/{order}/payment-status', [AdminOrderController::class, 'updatePaymentStatus']);
+        Route::patch('/orders/{order}/status', [
+            AdminOrderController::class,
+            'updateStatus',
+        ]);
+       
 
         // Customer management
         Route::get('/customers', [AdminCustomerController::class, 'index']);
@@ -121,5 +128,16 @@ Route::middleware(['auth:sanctum', 'admin'])
         Route::get('/inventory', [InventoryController::class, 'index']);
         Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock']);
         Route::post('/inventory/adjust', [InventoryController::class, 'adjust']);
-        Route::get('/inventory/{product}/history', [InventoryController::class, 'history']);
+        Route::get('/inventory/{product}/history', [
+            InventoryController::class,
+            'history',
+        ]);
+
+        // Payment management
+        Route::get('/payments', [AdminPaymentController::class, 'index']);
+        Route::get('/payments/{payment}', [AdminPaymentController::class, 'show']);
+        Route::patch('/payments/{payment}/status', [
+            AdminPaymentController::class,
+            'updateStatus',
+        ]);
     });
