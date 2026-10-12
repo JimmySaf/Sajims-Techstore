@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -54,16 +53,18 @@ class AuthController extends Controller
 
         $user = User::where('email', $validated['email'])->first();
 
-        if (!$user || !Hash::check($validated['password'], $user->password)) {
+        if (
+            !$user ||
+            !Hash::check($validated['password'], $user->password)
+        ) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
-$user->tokens()->delete();
 
-$token = $user->createToken(
-    'techstore-api-token'
-)->plainTextToken;
+        $user->tokens()->delete();
+
+        $token = $user->createToken('techstore-api-token')->plainTextToken;
 
         return response()->json([
             'success' => true,
