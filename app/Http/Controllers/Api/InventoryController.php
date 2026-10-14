@@ -44,10 +44,14 @@ class InventoryController extends Controller
 
     /**
      * Adjust stock and record the change.
+     *
+     * The product is identified by "product_id" in the request body,
+     * because the route (POST api/admin/inventory/adjust) has no {product}.
      */
-    public function adjust(Request $request, Product $product): JsonResponse
+    public function adjust(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'product_id' => ['required', 'integer', 'exists:products,id'],
             'quantity_change' => ['required', 'integer', 'not_in:0'],
             'type' => [
                 'required',
@@ -78,12 +82,11 @@ class InventoryController extends Controller
         }
 
         $result = DB::transaction(function () use (
-            $product,
             $validated,
             $quantityChange,
             $request
         ) {
-            $lockedProduct = Product::whereKey($product->id)
+            $lockedProduct = Product::whereKey($validated['product_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
 
