@@ -8,6 +8,7 @@ use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InventoryController extends Controller
 {
@@ -29,12 +30,10 @@ class InventoryController extends Controller
         }
 
         if ($request->boolean('low_stock')) {
-            $query->whereBetween('stock', [1, 5]);
+            $query->where('stock', '<=', 5);
         }
 
-        $products = $query
-            ->orderBy('stock')
-            ->paginate(20);
+        $products = $query->orderBy('stock')->paginate(20);
 
         return response()->json([
             'success' => true,
@@ -44,7 +43,7 @@ class InventoryController extends Controller
     }
 
     /**
-     * Adjust the stock of a product and record the adjustment.
+     * Adjust stock and record the change.
      */
     public function adjust(Request $request, Product $product): JsonResponse
     {
@@ -58,6 +57,25 @@ class InventoryController extends Controller
         ]);
 
         $quantityChange = (int) $validated['quantity_change'];
+        $type = $validated['type'];
+
+        if (
+            in_array($type, ['RESTOCK', 'RETURN'], true)
+            && $quantityChange < 0
+        ) {
+            throw ValidationException::withMessages([
+                'quantity_change' => 'RESTOCK and RETURN must increase stock.',
+            ]);
+        }
+
+        if (
+            in_array($type, ['SALE', 'DAMAGE'], true)
+            && $quantityChange > 0
+        ) {
+            throw ValidationException::withMessages([
+                'quantity_change' => 'SALE and DAMAGE must decrease stock.',
+            ]);
+        }
 
         $result = DB::transaction(function () use (
             $product,
@@ -77,9 +95,13 @@ class InventoryController extends Controller
             }
 
             $lockedProduct->stock = $newStock;
-            $lockedProduct->status = $newStock > 0
-                ? 'ACTIVE'
-                : 'OUT_OF_STOCK';
+
+            // Preserve an administrator's explicit INACTIVE setting.
+            if ($lockedProduct->status !== 'INACTIVE') {
+                $lockedProduct->status = $newStock > 0
+                    ? 'ACTIVE'
+                    : 'OUT_OF_STOCK';
+            }
 
             $lockedProduct->save();
 
@@ -114,7 +136,7 @@ class InventoryController extends Controller
     }
 
     /**
-     * Display the inventory adjustment history for a product.
+     * Display inventory adjustment history for a product.
      */
     public function history(Product $product): JsonResponse
     {
@@ -132,12 +154,12 @@ class InventoryController extends Controller
     }
 
     /**
-     * Display products with low stock (between 1 and 5 units).
+     * Display products with five or fewer units, including zero stock.
      */
     public function lowStock(): JsonResponse
     {
         $products = Product::with('category')
-            ->whereBetween('stock', [1, 5])
+            ->where('stock', '<=', 5)
             ->orderBy('stock')
             ->get();
 
