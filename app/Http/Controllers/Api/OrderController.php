@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
+use App\Models\InventoryAdjustment;
 use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
@@ -81,8 +82,10 @@ class OrderController extends Controller
                     ], 422));
                 }
 
-                if ($cartItem->quantity < 1 ||
-                    $cartItem->quantity > $product->stock) {
+                if (
+                    $cartItem->quantity < 1 ||
+                    $cartItem->quantity > $product->stock
+                ) {
                     abort(response()->json([
                         'success' => false,
                         'message' => "Insufficient stock for {$product->name}.",
@@ -134,10 +137,24 @@ class OrderController extends Controller
                     'subtotal' => $price * $quantity,
                 ]);
 
+                $previousStock = (int) $product->stock;
+
                 $product->decrement('stock', $quantity);
                 $product->refresh();
 
-                if ($product->stock <= 0) {
+                $newStock = (int) $product->stock;
+
+                InventoryAdjustment::create([
+                    'product_id' => $product->id,
+                    'user_id' => $request->user()->id,
+                    'quantity_change' => -$quantity,
+                    'previous_stock' => $previousStock,
+                    'new_stock' => $newStock,
+                    'type' => 'SALE',
+                    'reason' => 'Stock deducted for order ' . $order->order_number,
+                ]);
+
+                if ($newStock === 0) {
                     $product->update([
                         'status' => 'OUT_OF_STOCK',
                     ]);
@@ -223,9 +240,29 @@ class OrderController extends Controller
                     ->first();
 
                 if ($product) {
-                    $product->increment('stock', $item->quantity);
+                    $previousStock = (int) $product->stock;
+                    $quantity = (int) $item->quantity;
 
-                    if ($product->status === 'OUT_OF_STOCK' && $product->fresh()->stock > 0) {
+                    $product->increment('stock', $quantity);
+                    $product->refresh();
+
+                    $newStock = (int) $product->stock;
+
+                    InventoryAdjustment::create([
+                        'product_id' => $product->id,
+                        'user_id' => $lockedOrder->user_id,
+                        'quantity_change' => $quantity,
+                        'previous_stock' => $previousStock,
+                        'new_stock' => $newStock,
+                        'type' => 'RETURN',
+                        'reason' => 'Stock restored after cancellation of order '
+                            . $lockedOrder->order_number,
+                    ]);
+
+                    if (
+                        $product->status === 'OUT_OF_STOCK'
+                        && $newStock > 0
+                    ) {
                         $product->update([
                             'status' => 'ACTIVE',
                         ]);
