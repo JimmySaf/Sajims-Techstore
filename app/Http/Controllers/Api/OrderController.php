@@ -225,7 +225,11 @@ class OrderController extends Controller
                 ], 422));
             }
 
-            if ($lockedOrder->payment_status === 'PAID') {
+          if (in_array(
+    $lockedOrder->payment_status,
+    ['PAID', 'REFUNDED'],
+    true
+)) {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'This order has been paid. A refund must be handled before cancellation.',
