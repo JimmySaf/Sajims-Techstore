@@ -13,6 +13,9 @@ use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
 {
+    /**
+     * List products with optional search and filters.
+     */
     public function index(Request $request): JsonResponse
     {
         $query = Product::with('category');
@@ -44,6 +47,9 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * Create a product and record its initial stock.
+     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -56,18 +62,31 @@ class ProductController extends Controller
             'stock' => ['required', 'integer', 'min:0'],
             'status' => [
                 'sometimes',
-                'in:ACTIVE,INACTIVE,OUT_OF_STOCK',
+                Rule::in(['ACTIVE', 'INACTIVE', 'OUT_OF_STOCK']),
             ],
             'image' => ['nullable', 'string', 'max:255'],
         ]);
 
         $stock = (int) $validated['stock'];
+        $requestedStatus = $validated['status'] ?? 'ACTIVE';
 
-        $product = DB::transaction(function () use ($validated, $stock, $request) {
-            $status = $stock === 0
-                ? 'OUT_OF_STOCK'
-                : ($validated['status'] ?? 'ACTIVE');
+        if ($stock === 0) {
+            $status = 'OUT_OF_STOCK';
+        } elseif ($requestedStatus === 'OUT_OF_STOCK') {
+            return response()->json([
+                'success' => false,
+                'message' => 'A product with available stock cannot be marked OUT_OF_STOCK.',
+            ], 422);
+        } else {
+            $status = $requestedStatus;
+        }
 
+        $product = DB::transaction(function () use (
+            $validated,
+            $stock,
+            $status,
+            $request
+        ) {
             $product = Product::create([
                 ...$validated,
                 'stock' => $stock,
@@ -98,6 +117,9 @@ class ProductController extends Controller
         ], 201);
     }
 
+    /**
+     * Display one product.
+     */
     public function show(Product $product): JsonResponse
     {
         return response()->json([
@@ -107,10 +129,17 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * Update product details without allowing direct stock changes.
+     */
     public function update(Request $request, Product $product): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => ['sometimes', 'required', 'exists:categories,id'],
+            'category_id' => [
+                'sometimes',
+                'required',
+                'exists:categories,id',
+            ],
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string'],
             'brand' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -122,7 +151,6 @@ class ProductController extends Controller
                 Rule::unique('products', 'sku')->ignore($product->id),
             ],
             'price' => ['sometimes', 'required', 'numeric', 'min:0'],
-            // Stock must be changed through the inventory adjustment endpoint.
             'stock' => ['prohibited'],
             'status' => [
                 'sometimes',
@@ -145,23 +173,16 @@ class ProductController extends Controller
                 ->firstOrFail();
 
             $newStatus = $validated['status'] ?? $lockedProduct->status;
+            $stock = (int) $lockedProduct->stock;
 
-            // A product with no stock cannot be made available for sale.
-            if (
-                (int) $lockedProduct->stock === 0
-                && $newStatus === 'ACTIVE'
-            ) {
+            if ($stock === 0 && $newStatus === 'ACTIVE') {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'A product with zero stock cannot be marked ACTIVE.',
                 ], 422));
             }
 
-            // Keep stock-derived status consistent when stock is positive.
-            if (
-                (int) $lockedProduct->stock > 0
-                && $newStatus === 'OUT_OF_STOCK'
-            ) {
+            if ($stock > 0 && $newStatus === 'OUT_OF_STOCK') {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'A product with available stock cannot be marked OUT_OF_STOCK.',
@@ -180,6 +201,9 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * Delete a product.
+     */
     public function destroy(Product $product): JsonResponse
     {
         $product->delete();
