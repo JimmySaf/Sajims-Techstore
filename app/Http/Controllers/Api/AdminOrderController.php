@@ -143,10 +143,14 @@ class AdminOrderController extends Controller
             }
 
             if ($newStatus === 'CANCELLED') {
-                if ($lockedOrder->payment_status === 'PAID') {
+                if (in_array(
+                    $lockedOrder->payment_status,
+                    ['PAID', 'REFUNDED'],
+                    true
+                )) {
                     abort(response()->json([
                         'success' => false,
-                        'message' => 'This order has been paid. Handle the refund before cancelling the order.',
+                        'message' => 'This order has been paid or refunded. Resolve its payment status before cancelling the order.',
                     ], 422));
                 }
 
