@@ -100,15 +100,27 @@ class AdminCustomerController extends Controller
                 'string',
                 'min:8',
             ],
+            'is_active' => ['sometimes', 'required', 'boolean'],
         ]);
 
         if (isset($validated['password'])) {
             $validated['password'] = Hash::make(
                 $validated['password']
             );
+        } else {
+            // A null/empty password means "leave it unchanged".
+            unset($validated['password']);
         }
 
         $user->update($validated);
+
+        // Log the customer out everywhere when their account is deactivated.
+        if (
+            array_key_exists('is_active', $validated)
+            && !$user->is_active
+        ) {
+            $user->tokens()->delete();
+        }
 
         return response()->json([
             'success' => true,
@@ -120,7 +132,7 @@ class AdminCustomerController extends Controller
     }
 
     /**
-     * Delete customer.
+     * Delete a customer only when they have no order history.
      */
     public function destroy(User $user): JsonResponse
     {
@@ -129,6 +141,13 @@ class AdminCustomerController extends Controller
                 'success' => false,
                 'message' => 'Only customer accounts can be deleted here.',
             ], 422);
+        }
+
+        if ($user->orders()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This customer cannot be deleted because they have order history. Deactivate the account instead.',
+            ], 409);
         }
 
         $user->delete();
