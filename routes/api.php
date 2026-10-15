@@ -58,7 +58,7 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'active-account'])->group(function () {
     // Account
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
