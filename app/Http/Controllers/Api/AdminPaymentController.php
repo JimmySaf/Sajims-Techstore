@@ -11,9 +11,6 @@ use Illuminate\Validation\ValidationException;
 
 class AdminPaymentController extends Controller
 {
-    /**
-     * List payments with optional filters and pagination.
-     */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -80,9 +77,6 @@ class AdminPaymentController extends Controller
         ]);
     }
 
-    /**
-     * View a payment and its related customer and order.
-     */
     public function show(Payment $payment): JsonResponse
     {
         $payment->load([
@@ -100,10 +94,8 @@ class AdminPaymentController extends Controller
     }
 
     /**
-     * Update a payment status through an authorized admin action.
-     *
-     * This records an administrative status change. It does not
-     * independently verify a transaction with a payment provider.
+     * Record an administrative payment status change. This does not verify
+     * a transaction with a payment provider.
      */
     public function updateStatus(
         Request $request,
@@ -163,6 +155,19 @@ class AdminPaymentController extends Controller
                 ]);
             }
 
+            // Failed or cancelled payments are final; the customer creates
+            // a new payment (PaymentController reuses the record for retries).
+            if (
+                in_array($currentStatus, ['FAILED', 'CANCELLED'], true)
+                && $newStatus !== $currentStatus
+            ) {
+                throw ValidationException::withMessages([
+                    'status' => [
+                        'A failed or cancelled payment cannot be reopened. Ask the customer to create a new payment.',
+                    ],
+                ]);
+            }
+
             if (
                 $newStatus === 'COMPLETED'
                 && $order->status === 'CANCELLED'
@@ -172,6 +177,22 @@ class AdminPaymentController extends Controller
                         'A payment for a cancelled order cannot be completed.',
                     ],
                 ]);
+            }
+
+            // An order can only have one completed payment.
+            if ($newStatus === 'COMPLETED') {
+                $alreadyPaid = Payment::where('order_id', $lockedPayment->order_id)
+                    ->where('id', '!=', $lockedPayment->id)
+                    ->where('status', 'COMPLETED')
+                    ->exists();
+
+                if ($alreadyPaid) {
+                    throw ValidationException::withMessages([
+                        'status' => [
+                            'This order already has a completed payment.',
+                        ],
+                    ]);
+                }
             }
 
             if (
@@ -209,12 +230,24 @@ class AdminPaymentController extends Controller
 
             $lockedPayment->save();
 
-            $order->payment_status = match ($newStatus) {
-                'COMPLETED' => 'PAID',
-                'REFUNDED' => 'REFUNDED',
-                'FAILED', 'CANCELLED' => 'FAILED',
-                default => 'PENDING',
-            };
+            // Don't let an unrelated payment record un-pay a settled order.
+            $orderAlreadySettled = in_array(
+                $order->payment_status,
+                ['PAID', 'REFUNDED'],
+                true
+            );
+
+            if (
+                !$orderAlreadySettled
+                || in_array($newStatus, ['COMPLETED', 'REFUNDED'], true)
+            ) {
+                $order->payment_status = match ($newStatus) {
+                    'COMPLETED' => 'PAID',
+                    'REFUNDED' => 'REFUNDED',
+                    'FAILED', 'CANCELLED' => 'FAILED',
+                    default => 'PENDING',
+                };
+            }
 
             if (
                 $newStatus === 'COMPLETED'

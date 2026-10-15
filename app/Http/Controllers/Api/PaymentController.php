@@ -39,12 +39,10 @@ class PaymentController extends Controller
             $order,
             $validated
         ) {
-            // Lock the order before checking and creating its payment.
             $lockedOrder = Order::whereKey($order->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            // Do not allow customers to pay for another customer's order.
             if ((int) $lockedOrder->user_id !== (int) $request->user()->id) {
                 abort(response()->json([
                     'success' => false,
@@ -59,7 +57,7 @@ class PaymentController extends Controller
                 ], 422));
             }
 
-            if (in_array($lockedOrder->status, ['DELIVERED'], true)) {
+            if ($lockedOrder->status === 'DELIVERED') {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'This order has already been delivered.',
@@ -173,18 +171,14 @@ class PaymentController extends Controller
         ]);
     }
 
-    /**
-     * Generate a unique payment reference.
-     */
-    
-private function generatePaymentReference(): string
-{
-    do {
-        $reference = 'PAY-' . strtoupper(Str::random(10));
-    } while (
-        Payment::where('payment_reference', $reference)->exists()
-    );
+    private function generatePaymentReference(): string
+    {
+        do {
+            $reference = 'PAY-' . strtoupper(Str::random(10));
+        } while (
+            Payment::where('payment_reference', $reference)->exists()
+        );
 
-    return $reference;
-}
+        return $reference;
+    }
 }
