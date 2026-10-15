@@ -89,8 +89,12 @@ Route::middleware('auth:sanctum')->group(function () {
 | Every route in this group requires authentication and admin authorization.
 |
 */
+Route::middleware([
+    'auth:sanctum',
+    'active-account',
+    'admin',
+])
 
-Route::middleware(['auth:sanctum', 'admin'])
     ->prefix('admin')
     ->group(function () {
         // Dashboard
