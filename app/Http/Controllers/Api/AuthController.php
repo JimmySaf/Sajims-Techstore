@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -62,7 +63,11 @@ class AuthController extends Controller
             ]);
         }
 
-        $user->tokens()->delete();
+        if (!$user->is_active) {
+            throw ValidationException::withMessages([
+                'email' => ['This account has been deactivated. Please contact support.'],
+            ]);
+        }
 
         $token = $user->createToken('techstore-api-token')->plainTextToken;
 
