@@ -124,23 +124,7 @@ class OrderCheckoutTest extends TestCase
                 ->value('id'),
         ]);
     }
-    public function test_checkout_rejects_an_empty_cart(): void
-    {
-        $customer = $this->createCustomer();
 
-        Sanctum::actingAs($customer);
-
-        $response = $this->postJson(
-            '/api/checkout',
-            $this->shippingDetails()
-        );
-
-        $response->assertStatus(422)
-            ->assertJsonPath('success', false)
-            ->assertJsonPath('message', 'Your cart is empty.');
-
-        $this->assertDatabaseCount('orders', 0);
-    }
     public function test_checkout_rejects_an_empty_cart(): void
     {
         $customer = $this->createCustomer();
