@@ -1,5 +1,4 @@
 <?php
-
 namespace Tests\Feature;
 
 use App\Models\Order;
@@ -64,8 +63,10 @@ class CustomerPaymentTest extends TestCase
     {
         $order = $this->createOrder($this->createCustomer());
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
-            ->assertUnauthorized();
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertUnauthorized();
     }
 
     public function test_customer_payment_is_pending_and_amount_comes_from_order(): void
@@ -75,11 +76,14 @@ class CustomerPaymentTest extends TestCase
 
         Sanctum::actingAs($customer);
 
-        // The client tries to dictate the amount and status; both are ignored.
-        $this->postJson("/api/orders/{$order->id}/payment", array_merge(
-            $this->mpesaPayload(),
-            ['amount' => 1, 'status' => 'COMPLETED']
-        ))
+        // Client-supplied amount and status must not override server values.
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            array_merge(
+                $this->mpesaPayload(),
+                ['amount' => 1, 'status' => 'COMPLETED']
+            )
+        )
             ->assertCreated()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.payment.status', 'PENDING')
@@ -107,8 +111,10 @@ class CustomerPaymentTest extends TestCase
 
         Sanctum::actingAs($other);
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
-            ->assertNotFound();
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertNotFound();
 
         $this->assertDatabaseCount('payments', 0);
     }
@@ -132,12 +138,16 @@ class CustomerPaymentTest extends TestCase
     public function test_payment_cannot_be_created_for_cancelled_order(): void
     {
         $customer = $this->createCustomer();
-        $order = $this->createOrder($customer, ['status' => 'CANCELLED']);
+        $order = $this->createOrder($customer, [
+            'status' => 'CANCELLED',
+        ]);
 
         Sanctum::actingAs($customer);
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
-            ->assertUnprocessable();
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertUnprocessable();
 
         $this->assertDatabaseCount('payments', 0);
     }
@@ -145,12 +155,16 @@ class CustomerPaymentTest extends TestCase
     public function test_payment_cannot_be_created_for_paid_order(): void
     {
         $customer = $this->createCustomer();
-        $order = $this->createOrder($customer, ['payment_status' => 'PAID']);
+        $order = $this->createOrder($customer, [
+            'payment_status' => 'PAID',
+        ]);
 
         Sanctum::actingAs($customer);
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
-            ->assertUnprocessable();
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertUnprocessable();
 
         $this->assertDatabaseCount('payments', 0);
     }
@@ -159,44 +173,118 @@ class CustomerPaymentTest extends TestCase
     {
         $customer = $this->createCustomer();
         $order = $this->createOrder($customer);
+
         $this->createPayment($customer, $order, 'PENDING');
 
         Sanctum::actingAs($customer);
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
-            ->assertStatus(409);
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertStatus(409);
 
-        $this->assertSame(1, Payment::where('order_id', $order->id)->count());
+        $this->assertSame(
+            1,
+            Payment::where('order_id', $order->id)->count()
+        );
+    }
+
+    public function test_processing_payment_blocks_duplicate_payment(): void
+    {
+        $customer = $this->createCustomer();
+        $order = $this->createOrder($customer);
+
+        $this->createPayment($customer, $order, 'PROCESSING');
+
+        Sanctum::actingAs($customer);
+
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertStatus(409);
+
+        $this->assertSame(
+            1,
+            Payment::where('order_id', $order->id)->count()
+        );
     }
 
     public function test_existing_completed_payment_blocks_new_payment(): void
     {
         $customer = $this->createCustomer();
         $order = $this->createOrder($customer);
+
         $this->createPayment($customer, $order, 'COMPLETED');
 
         Sanctum::actingAs($customer);
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
-            ->assertStatus(409);
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertStatus(409);
 
-        $this->assertSame(1, Payment::where('order_id', $order->id)->count());
+        $this->assertSame(
+            1,
+            Payment::where('order_id', $order->id)->count()
+        );
+    }
+
+    public function test_invalid_payment_method_is_rejected(): void
+    {
+        $customer = $this->createCustomer();
+        $order = $this->createOrder($customer);
+
+        Sanctum::actingAs($customer);
+
+        $this->postJson("/api/orders/{$order->id}/payment", [
+            'method' => 'CRYPTO',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('method');
+
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_payment_cannot_be_created_for_delivered_order(): void
+    {
+        $customer = $this->createCustomer();
+        $order = $this->createOrder($customer, [
+            'status' => 'DELIVERED',
+        ]);
+
+        Sanctum::actingAs($customer);
+
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )->assertUnprocessable();
+
+        $this->assertDatabaseCount('payments', 0);
     }
 
     public function test_customer_can_retry_after_failed_payment(): void
     {
         $customer = $this->createCustomer();
-        $order = $this->createOrder($customer, ['payment_status' => 'FAILED']);
+        $order = $this->createOrder($customer, [
+            'payment_status' => 'FAILED',
+        ]);
+
         $failed = $this->createPayment($customer, $order, 'FAILED');
 
         Sanctum::actingAs($customer);
 
-        $this->postJson("/api/orders/{$order->id}/payment", $this->mpesaPayload())
+        $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )
             ->assertCreated()
             ->assertJsonPath('data.payment.status', 'PENDING');
 
-        // The failed record is reused, not duplicated.
-        $this->assertSame(1, Payment::where('order_id', $order->id)->count());
+        // The failed payment record is reused, not duplicated.
+        $this->assertSame(
+            1,
+            Payment::where('order_id', $order->id)->count()
+        );
 
         $this->assertDatabaseHas('payments', [
             'id' => $failed->id,
@@ -207,6 +295,50 @@ class CustomerPaymentTest extends TestCase
             'id' => $order->id,
             'payment_status' => 'PENDING',
         ]);
+    }
+
+    public function test_retry_after_failure_refreshes_payment_details(): void
+    {
+        $customer = $this->createCustomer();
+        $order = $this->createOrder($customer, [
+            'payment_status' => 'FAILED',
+        ]);
+
+        $failed = $this->createPayment($customer, $order, 'FAILED');
+
+        $failed->update([
+            'payment_reference' => 'PAY-OLD-REFERENCE',
+            'transaction_reference' => 'OLD-TRANSACTION',
+            'failure_reason' => 'Previous attempt failed',
+            'paid_at' => now(),
+        ]);
+
+        Sanctum::actingAs($customer);
+
+        $response = $this->postJson(
+            "/api/orders/{$order->id}/payment",
+            $this->mpesaPayload()
+        )
+            ->assertCreated()
+            ->assertJsonPath('data.payment.status', 'PENDING');
+
+        $response->assertJsonPath('data.payment.failure_reason', null);;
+
+        $failed->refresh();
+
+        $this->assertNotSame(
+            'PAY-OLD-REFERENCE',
+            $failed->payment_reference
+        );
+
+        $this->assertNull($failed->transaction_reference);
+        $this->assertNull($failed->failure_reason);
+        $this->assertNull($failed->paid_at);
+
+        $this->assertSame(
+            1,
+            Payment::where('order_id', $order->id)->count()
+        );
     }
 
     public function test_customer_can_view_own_payment(): void
