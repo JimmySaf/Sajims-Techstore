@@ -1,0 +1,11 @@
+
+.git
+.github
+.env
+.env.*
+!.env.example
+vendor
+node_modules
+tests
+sajims_techstore_backup.sql
+storage/logs/*
