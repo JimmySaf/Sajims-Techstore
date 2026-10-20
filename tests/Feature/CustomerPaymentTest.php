@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Feature;
 
 use App\Models\Order;
@@ -76,7 +77,6 @@ class CustomerPaymentTest extends TestCase
 
         Sanctum::actingAs($customer);
 
-        // Client-supplied amount and status must not override server values.
         $this->postJson(
             "/api/orders/{$order->id}/payment",
             array_merge(
@@ -273,21 +273,31 @@ class CustomerPaymentTest extends TestCase
 
         Sanctum::actingAs($customer);
 
-        $this->postJson(
+        $response = $this->postJson(
             "/api/orders/{$order->id}/payment",
             $this->mpesaPayload()
         )
             ->assertCreated()
             ->assertJsonPath('data.payment.status', 'PENDING');
 
-        // The failed payment record is reused, not duplicated.
+        $newPaymentId = $response->json('data.payment.id');
+
+        $this->assertNotEquals($failed->id, $newPaymentId);
+
         $this->assertSame(
-            1,
+            2,
             Payment::where('order_id', $order->id)->count()
         );
 
         $this->assertDatabaseHas('payments', [
             'id' => $failed->id,
+            'status' => 'FAILED',
+        ]);
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $newPaymentId,
+            'order_id' => $order->id,
+            'user_id' => $customer->id,
             'status' => 'PENDING',
         ]);
 
@@ -297,7 +307,7 @@ class CustomerPaymentTest extends TestCase
         ]);
     }
 
-    public function test_retry_after_failure_refreshes_payment_details(): void
+    public function test_retry_after_failure_preserves_previous_payment_details(): void
     {
         $customer = $this->createCustomer();
         $order = $this->createOrder($customer, [
@@ -310,7 +320,6 @@ class CustomerPaymentTest extends TestCase
             'payment_reference' => 'PAY-OLD-REFERENCE',
             'transaction_reference' => 'OLD-TRANSACTION',
             'failure_reason' => 'Previous attempt failed',
-            'paid_at' => now(),
         ]);
 
         Sanctum::actingAs($customer);
@@ -322,21 +331,33 @@ class CustomerPaymentTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.payment.status', 'PENDING');
 
-        $response->assertJsonPath('data.payment.failure_reason', null);;
+        $newPaymentId = $response->json('data.payment.id');
 
-        $failed->refresh();
+        $this->assertNotEquals($failed->id, $newPaymentId);
 
-        $this->assertNotSame(
+        $this->assertDatabaseHas('payments', [
+            'id' => $failed->id,
+            'payment_reference' => 'PAY-OLD-REFERENCE',
+            'transaction_reference' => 'OLD-TRANSACTION',
+            'failure_reason' => 'Previous attempt failed',
+            'status' => 'FAILED',
+        ]);
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $newPaymentId,
+            'status' => 'PENDING',
+            'transaction_reference' => null,
+            'failure_reason' => null,
+            'paid_at' => null,
+        ]);
+
+        $this->assertNotEquals(
             'PAY-OLD-REFERENCE',
-            $failed->payment_reference
+            $response->json('data.payment.payment_reference')
         );
 
-        $this->assertNull($failed->transaction_reference);
-        $this->assertNull($failed->failure_reason);
-        $this->assertNull($failed->paid_at);
-
         $this->assertSame(
-            1,
+            2,
             Payment::where('order_id', $order->id)->count()
         );
     }
