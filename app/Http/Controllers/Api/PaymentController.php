@@ -78,25 +78,28 @@ class PaymentController extends Controller
                 ], 422));
             }
 
-            // Reuse a failed or cancelled payment record for a retry.
-            $existingPayment = Payment::where('order_id', $lockedOrder->id)
+            // Lock this order's existing payments before checking them.
+            $existingPayments = Payment::where('order_id', $lockedOrder->id)
                 ->lockForUpdate()
-                ->latest('id')
-                ->first();
+                ->get();
 
-            if ($existingPayment && in_array(
-                $existingPayment->status,
-                ['PENDING', 'PROCESSING'],
-                true
-            )) {
+            $activePayment = $existingPayments->first(
+                fn (Payment $existing) => in_array(
+                    $existing->status,
+                    ['PENDING', 'PROCESSING'],
+                    true
+                )
+            );
+
+            if ($activePayment) {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'A payment is already pending for this order.',
-                    'payment_reference' => $existingPayment->payment_reference,
+                    'payment_reference' => $activePayment->payment_reference,
                 ], 409));
             }
 
-            if ($existingPayment && $existingPayment->status === 'COMPLETED') {
+            if ($existingPayments->contains('status', 'COMPLETED')) {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'This order already has a completed payment.',
@@ -105,30 +108,17 @@ class PaymentController extends Controller
 
             $paymentReference = $this->generatePaymentReference();
 
-            if ($existingPayment) {
-                $existingPayment->update([
-                    'payment_reference' => $paymentReference,
-                    'amount' => $lockedOrder->total,
-                    'method' => $validated['method'],
-                    'status' => 'PENDING',
-                    'transaction_reference' => null,
-                    'phone_number' => $validated['phone_number'] ?? null,
-                    'failure_reason' => null,
-                    'paid_at' => null,
-                ]);
-
-                $payment = $existingPayment;
-            } else {
-                $payment = Payment::create([
-                    'order_id' => $lockedOrder->id,
-                    'user_id' => $request->user()->id,
-                    'payment_reference' => $paymentReference,
-                    'amount' => $lockedOrder->total,
-                    'method' => $validated['method'],
-                    'status' => 'PENDING',
-                    'phone_number' => $validated['phone_number'] ?? null,
-                ]);
-            }
+            // Failed or cancelled attempts stay on record; a retry always
+            // creates a fresh payment with its own reference.
+            $payment = Payment::create([
+                'order_id' => $lockedOrder->id,
+                'user_id' => $request->user()->id,
+                'payment_reference' => $paymentReference,
+                'amount' => $lockedOrder->total,
+                'method' => $validated['method'],
+                'status' => 'PENDING',
+                'phone_number' => $validated['phone_number'] ?? null,
+            ]);
 
             $lockedOrder->update([
                 'payment_method' => $validated['method'],
