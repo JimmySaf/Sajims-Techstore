@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Cart;
 use App\Models\Category;
-use App\Models\InventoryAdjustment;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,6 +43,41 @@ class OrderCheckoutTest extends TestCase
             'stock' => $stock,
             'status' => $stock > 0 ? 'ACTIVE' : 'OUT_OF_STOCK',
         ]);
+    }
+
+    private function createOrder(User $user, string $prefix = 'SJ-TEST-'): Order
+    {
+        return Order::create([
+            'user_id' => $user->id,
+            'order_number' => $prefix . strtoupper(uniqid()),
+            'subtotal' => 1500,
+            'shipping_fee' => 0,
+            'total' => 1500,
+            'status' => 'PENDING',
+            'payment_status' => 'PENDING',
+            'payment_method' => 'MPESA',
+            'shipping_name' => 'Order Owner',
+            'shipping_phone' => '0712345678',
+            'shipping_address' => 'Test Street',
+            'shipping_city' => 'Nairobi',
+        ]);
+    }
+
+    private function createPayment(
+        User $user,
+        Order $order,
+        string $status,
+        array $overrides = []
+    ): Payment {
+        return Payment::create(array_merge([
+            'order_id' => $order->id,
+            'user_id' => $user->id,
+            'payment_reference' => 'PAY-' . strtoupper(bin2hex(random_bytes(5))),
+            'amount' => $order->total,
+            'method' => 'MPESA',
+            'status' => $status,
+            'phone_number' => '0712345678',
+        ], $overrides));
     }
 
     private function shippingDetails(): array
@@ -194,21 +229,7 @@ class OrderCheckoutTest extends TestCase
     {
         $owner = $this->createCustomer();
         $otherCustomer = $this->createCustomer();
-
-        $order = Order::create([
-            'user_id' => $owner->id,
-            'order_number' => 'SJ-TEST-' . strtoupper(uniqid()),
-            'subtotal' => 1500,
-            'shipping_fee' => 0,
-            'total' => 1500,
-            'status' => 'PENDING',
-            'payment_status' => 'PENDING',
-            'payment_method' => 'MPESA',
-            'shipping_name' => 'Order Owner',
-            'shipping_phone' => '0712345678',
-            'shipping_address' => 'Test Street',
-            'shipping_city' => 'Nairobi',
-        ]);
+        $order = $this->createOrder($owner);
 
         Sanctum::actingAs($otherCustomer);
 
@@ -264,5 +285,52 @@ class OrderCheckoutTest extends TestCase
             'id' => $orderId,
             'status' => 'CANCELLED',
         ]);
+    }
+
+    public function test_customer_can_view_all_payment_attempts_for_own_order(): void
+    {
+        $customer = $this->createCustomer();
+        $order = $this->createOrder($customer, 'SJ-HISTORY-');
+
+        $oldPayment = $this->createPayment($customer, $order, 'FAILED', [
+            'transaction_reference' => 'OLD-ATTEMPT-123',
+            'failure_reason' => 'Previous attempt failed',
+        ]);
+
+        $newPayment = $this->createPayment($customer, $order, 'PENDING');
+
+        Sanctum::actingAs($customer);
+
+        $response = $this->getJson('/api/orders/' . $order->id);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.order.id', $order->id)
+            ->assertJsonCount(2, 'data.order.payments')
+            ->assertJsonPath('data.order.payment.id', $newPayment->id);
+
+        $paymentIds = collect(
+            $response->json('data.order.payments')
+        )->pluck('id')->all();
+
+        $this->assertContains($oldPayment->id, $paymentIds);
+        $this->assertContains($newPayment->id, $paymentIds);
+    }
+
+    public function test_customer_cannot_view_another_customers_payment_history(): void
+    {
+        $owner = $this->createCustomer();
+        $otherCustomer = $this->createCustomer();
+        $order = $this->createOrder($owner, 'SJ-PRIVATE-');
+
+        $this->createPayment($owner, $order, 'FAILED', [
+            'transaction_reference' => 'PRIVATE-ATTEMPT',
+        ]);
+
+        Sanctum::actingAs($otherCustomer);
+
+        $this->getJson('/api/orders/' . $order->id)
+            ->assertForbidden()
+            ->assertJsonPath('success', false);
     }
 }
