@@ -48,9 +48,19 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    /**
+     * The most recent payment attempt for this order.
+     */
     public function payment(): HasOne
     {
-        return $this->hasOne(Payment::class);
+        return $this->hasOne(Payment::class)->latestOfMany();
+    }
+
+    /**
+     * Every payment attempt for this order, including failed ones.
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
     }
 }
-
