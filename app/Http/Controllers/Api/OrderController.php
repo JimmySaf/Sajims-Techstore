@@ -21,7 +21,11 @@ class OrderController extends Controller
     {
         $orders = $request->user()
             ->orders()
-            ->with(['items', 'payment'])
+            ->with([
+                'items',
+                'payment',
+                'payments' => fn ($query) => $query->latest(),
+            ])
             ->latest()
             ->paginate(10);
 
@@ -65,10 +69,6 @@ class OrderController extends Controller
 
             $subtotal = 0;
 
-            /*
-             * Lock and re-check each product to reduce the risk
-             * of overselling when multiple checkouts happen together.
-             */
             foreach ($cart->items as $cartItem) {
                 $product = Product::whereKey($cartItem->product_id)
                     ->lockForUpdate()
@@ -98,10 +98,11 @@ class OrderController extends Controller
                 $cartItem->price = $product->price;
                 $cartItem->setRelation('product', $product);
 
-                $subtotal += (float) $product->price * $cartItem->quantity;
+                $subtotal += (float) $product->price
+                    * $cartItem->quantity;
             }
 
-            // Shipping is currently free; configurable shipping can be added later.
+            // Shipping is currently free.
             $shippingFee = 0;
             $total = $subtotal + $shippingFee;
 
@@ -151,7 +152,8 @@ class OrderController extends Controller
                     'previous_stock' => $previousStock,
                     'new_stock' => $newStock,
                     'type' => 'SALE',
-                    'reason' => 'Stock deducted for order ' . $order->order_number,
+                    'reason' => 'Stock deducted for order '
+                        . $order->order_number,
                 ]);
 
                 if ($newStock === 0) {
@@ -161,13 +163,17 @@ class OrderController extends Controller
                 }
             }
 
-            // Remove cart items only after the order is successfully created.
+            // Clear the cart only after successful order creation.
             $cart->items()->delete();
 
             return $order;
         });
 
-        $order->load(['items', 'payment']);
+        $order->load([
+            'items',
+            'payment',
+            'payments' => fn ($query) => $query->latest(),
+        ]);
 
         return response()->json([
             'success' => true,
@@ -190,7 +196,11 @@ class OrderController extends Controller
             ], 403);
         }
 
-        $order->load(['items.product', 'payment']);
+        $order->load([
+            'items.product',
+            'payment',
+            'payments' => fn ($query) => $query->latest(),
+        ]);
 
         return response()->json([
             'success' => true,
@@ -218,7 +228,11 @@ class OrderController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (!in_array($lockedOrder->status, ['PENDING', 'CONFIRMED'], true)) {
+            if (!in_array(
+                $lockedOrder->status,
+                ['PENDING', 'CONFIRMED'],
+                true
+            )) {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'This order can no longer be cancelled.',
@@ -264,8 +278,8 @@ class OrderController extends Controller
                     ]);
 
                     if (
-                        $product->status === 'OUT_OF_STOCK'
-                        && $newStock > 0
+                        $product->status === 'OUT_OF_STOCK' &&
+                        $newStock > 0
                     ) {
                         $product->update([
                             'status' => 'ACTIVE',
@@ -281,7 +295,11 @@ class OrderController extends Controller
             return $lockedOrder;
         });
 
-        $cancelledOrder->load(['items', 'payment']);
+        $cancelledOrder->load([
+            'items',
+            'payment',
+            'payments' => fn ($query) => $query->latest(),
+        ]);
 
         return response()->json([
             'success' => true,
