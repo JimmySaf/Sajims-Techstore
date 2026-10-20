@@ -156,7 +156,7 @@ class AdminPaymentController extends Controller
             }
 
             // Failed or cancelled payments are final; the customer creates
-            // a new payment (PaymentController reuses the record for retries).
+            // a new payment instead.
             if (
                 in_array($currentStatus, ['FAILED', 'CANCELLED'], true)
                 && $newStatus !== $currentStatus
