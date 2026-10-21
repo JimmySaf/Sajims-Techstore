@@ -1,4 +1,23 @@
 
+# Stage 1: Build React and Vite frontend assets
+FROM node:22-bookworm-slim AS frontend-build
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY pnpm-workspace.yaml ./
+COPY .npmrc ./
+
+RUN npm ci
+
+COPY resources ./resources
+COPY public ./public
+COPY vite.config.ts tsconfig.json ./
+
+RUN npm run build
+
+
+# Stage 2: Install and run Laravel
 FROM php:8.4-cli
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,6 +38,9 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
 
 COPY . .
+
+# Copy the compiled frontend assets into Laravel's public directory
+COPY --from=frontend-build /app/public/build ./public/build
 
 RUN composer install \
     --no-dev \
