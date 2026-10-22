@@ -1,28 +1,30 @@
 
-# Stage 1: Build React and Vite frontend assets
+# Stage 1: Build the React frontend
 FROM node:22-bookworm-slim AS frontend-build
 
 WORKDIR /app
 
-# Copy dependency files first for better Docker caching
+# Copy package manager files
 COPY package.json package-lock.json ./
-COPY .npmrc ./
 COPY pnpm-workspace.yaml ./
+COPY .npmrc ./
 
-RUN npm ci
+# Allow package installation scripts during the Docker build.
+# This overrides ignore-scripts=true from the project's .npmrc.
+RUN npm ci --ignore-scripts=false
 
-# Copy frontend source files and Vite configuration
+# Copy application source and build configuration
 COPY resources ./resources
 COPY public ./public
 COPY vite.config.ts tsconfig.json ./
 
-# Build the frontend
+# Build React and generate the Vite manifest
 RUN npm run build
 
-# Verify the Vite manifest exists
+# Fail the image build if the manifest is missing
 RUN test -f public/build/manifest.json
 
-# Stage 2: Install and run Laravel
+# Stage 2: Run Laravel
 FROM php:8.4-cli
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,13 +44,11 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy Laravel application
 COPY . .
 
-# Copy the compiled frontend into Laravel's public directory
+# Copy the compiled frontend into the Laravel application
 COPY --from=frontend-build /app/public/build ./public/build
 
-# Install production PHP dependencies
 RUN composer install \
     --no-dev \
     --prefer-dist \
@@ -56,7 +56,6 @@ RUN composer install \
     --no-progress \
     --optimize-autoloader
 
-# Prepare Laravel writable directories
 RUN mkdir -p \
     storage/framework/cache \
     storage/framework/sessions \
